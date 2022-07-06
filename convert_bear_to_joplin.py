@@ -28,7 +28,8 @@ class BearToJoplinConverter:
                 return
 
         out_folder = os.path.dirname(out_path)
-        os.makedirs(out_folder, exist_ok=True)
+        if out_folder:
+            os.makedirs(out_folder, exist_ok=True)
 
         if os.path.splitext(in_path)[1] != '.md':
             shutil.copyfile(in_path, out_path)
