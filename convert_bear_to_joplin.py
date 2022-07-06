@@ -1,10 +1,28 @@
 from datetime import datetime, timezone
 import os
+import platform
 import re
 import shutil
 
 import click
 import yaml
+
+
+def get_creation_time(file_path):
+    """Try to get the date that a file was created, falling back to when it was
+    last modified if that isn't possible.
+    See http://stackoverflow.com/a/39501288/1709587 for explanation.
+    """
+    if platform.system() == "Windows":
+        return os.path.getctime(file_path)
+    else:
+        stat = os.stat(file_path)
+        try:
+            return stat.st_birthtime
+        except AttributeError:
+            # We're probably on Linux. No easy way to get creation dates here,
+            # so we'll settle for when its content was last modified.
+            return stat.st_mtime
 
 
 class BearToJoplinConverter:
@@ -74,7 +92,7 @@ class BearToJoplinConverter:
         if title:
             front_matter['title'] = title
 
-        created = datetime.fromtimestamp(os.path.getctime(md_path), timezone.utc)
+        created = datetime.fromtimestamp(get_creation_time(md_path), timezone.utc)
         updated = datetime.fromtimestamp(os.path.getmtime(md_path), timezone.utc)
         front_matter['created'] = f'{created:%Y-%m-%d %H:%M:%SZ}'
         front_matter['updated'] = f'{updated:%Y-%m-%d %H:%M:%SZ}'
