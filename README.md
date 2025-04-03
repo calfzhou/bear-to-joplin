@@ -31,3 +31,21 @@ pip install -r requirements.txt -c constraints.txt
 ``` bash
 python convert_bear_to_joplin.py --help
 ```
+
+``` text
+Usage: convert_bear_to_joplin.py [OPTIONS] SRC DST
+
+  Convert Bear exported markdown files to markdown + Front Matter formats
+  which Joplin can import.
+
+  SRC is the path of the input markdown file or directory.
+
+  DST is the path of the output markdown file or directory.
+
+Options:
+  --overwrite [yes|no|ask|abort]  Whether overwrite existing destination file
+                                  (default: yes).
+  --reverse                       Set file creation and modification time to
+                                  the time in the front matter.
+  --help                          Show this message and exit.
+```

@@ -25,9 +25,31 @@ def get_creation_time(file_path):
             return stat.st_mtime
 
 
+def set_creation_time(file_path, created):
+    """Set the creation time of a file.
+
+    This is only supported on Windows and macOS.
+    """
+    if platform.system() == "Windows":
+        import win32file
+        import pywintypes
+        handle = win32file.CreateFile(file_path, win32file.GENERIC_WRITE,
+                                       0, None, win32file.OPEN_EXISTING,
+                                       win32file.FILE_ATTRIBUTE_NORMAL, None)
+        creation_time = pywintypes.Time(created.timestamp())
+        win32file.SetFileTime(handle, creation_time, None, None)
+        handle.Close()
+    elif platform.system() == "Darwin": # macOS
+        import subprocess
+        subprocess.run(['SetFile', '-d', created.astimezone().strftime('%m/%d/%Y %H:%M:%S'), file_path])
+    else:
+        raise NotImplementedError("Setting creation time is not supported on this platform.")
+
+
 class BearToJoplinConverter:
-    def __init__(self, overwrite='yes'):
+    def __init__(self, overwrite='yes', reverse=False):
         self.overwrite = overwrite
+        self.reverse = reverse
         self.color_re = re.compile(r'^[0-9a-fA-F]{6}$')
 
     def convert(self, in_path, out_path):
@@ -53,16 +75,21 @@ class BearToJoplinConverter:
             shutil.copyfile(in_path, out_path)
             return
 
-        front_matter = self.extract_front_matter_info(in_path)
-        with open(in_path) as in_file:
-            with open(out_path, 'w') as out_file:
-                yaml.dump(front_matter, out_file, sort_keys=False, explicit_start=True, allow_unicode=True)
-                out_file.write('---\n\n')
-                for line in in_file:
-                    out_file.write(line)
+        if self.reverse:
+            shutil.copyfile(in_path, out_path)
+            front_matter = self.load_front_matter(in_path)
+            self.overwrite_file_times(out_path, front_matter.get('created'), front_matter.get('updated'))
+        else:
+            front_matter = self.extract_front_matter_info(in_path)
+            with open(in_path) as in_file:
+                with open(out_path, 'w') as out_file:
+                    yaml.dump(front_matter, out_file, sort_keys=False, explicit_start=True, allow_unicode=True)
+                    out_file.write('---\n\n')
+                    for line in in_file:
+                        out_file.write(line)
 
-        shutil.copymode(in_path, out_path)
-        shutil.copystat(in_path, out_path)
+            shutil.copymode(in_path, out_path)
+            shutil.copystat(in_path, out_path)
 
     def extract_front_matter_info(self, md_path):
         """Parse Markdown content to extract title and hashtags.
@@ -101,6 +128,26 @@ class BearToJoplinConverter:
             front_matter['tags'] = tags
 
         return front_matter
+
+    def load_front_matter(self, md_path):
+        """Load front matter from a markdown file.
+
+        This is used to extract the front matter from a markdown file.
+        """
+        with open(md_path) as f:
+            # To prevent the YAML parser from failing on invalid characters, e.g. unacceptable character #x0011.
+            for data in yaml.safe_load_all(re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', f.read())):
+                if isinstance(data, dict):
+                    return data
+
+        return {}
+
+    def overwrite_file_times(self, file_path, created: datetime | None, updated: datetime | None):
+        if created:
+            set_creation_time(file_path, created)
+
+        if updated:
+            os.utime(file_path, (updated.timestamp(), updated.timestamp()))
 
     def extract_hashtags(self, line):
         if not line or '#' not in line:
@@ -162,6 +209,8 @@ class BearToJoplinConverter:
 @click.argument('dst', type=click.Path())
 @click.option('--overwrite', type=click.Choice(['yes', 'no', 'ask', 'abort']), default='yes',
               help='Whether overwrite existing destination file (default: yes).')
+@click.option('--reverse', is_flag=True, default=False,
+              help='Set file creation and modification time to the time in the front matter.')
 def main(src, dst, **kwargs):
     """Convert Bear exported markdown files to markdown + Front Matter formats which Joplin can import.
 
@@ -170,7 +219,7 @@ def main(src, dst, **kwargs):
     DST is the path of the output markdown file or directory.
     """
     print(locals())
-    converter = BearToJoplinConverter(overwrite=kwargs['overwrite'])
+    converter = BearToJoplinConverter(overwrite=kwargs['overwrite'], reverse=kwargs['reverse'])
 
     if os.path.isfile(src):
         if os.path.isdir(dst):
